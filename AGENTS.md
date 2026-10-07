@@ -205,6 +205,7 @@ Every submission is analysis (classify the code, price it) then execution
 | Size a whole sequence before submitting anything | `await client.group(task_a, task_b)` |
 | Analyze everything, submit nothing | `estimate_only=True` / `CAS_ESTIMATE_ONLY` |
 | Per-GPU predicted time and cost, before any client call | `POST /api/estimate` (see below) |
+| A frozen record of the work, and its compute coefficient on every GPU | `analyzer.assay(job_id)` → `client.ladder(assay)` (see below) |
 
 A decorated `@client.task` function classifies once and reuses that result for
 every later call, but its classification cannot be passed in or out — reuse
@@ -400,6 +401,100 @@ Response (rows sorted cheapest-first by `estimated_cost_usd`):
 
 ---
 
+## Assay and GPU ladder — the work as a document, its compute coefficient on every GPU
+
+The analyzer issues an **assay** (schema `assay/1`) for each analysis: what the
+workload is and how much work it is, measured on the reference card. The
+**ladder** gives every GPU's coefficient for the assay's compute phase against
+the reference card, fastest first — no time, no prices. The other phases
+(warmup, I/O, setup) do not depend on the GPU and stay as the assay states
+them. Nothing runs on a GPU.
+The ladder is served only to accounts with ladder access (`GET /v1/me` →
+`"ladder_access": true`); the assay is available to every account.
+
+```python
+from krauncher import KrauncherClient, KrauncherError
+from krauncher.analyzer import AssayOutdated
+
+client = KrauncherClient()
+
+# 1. Analyze. Either the source as written:
+analyzer = client.analyzer()
+c = await analyzer.classify(source, kwargs={"epochs": 3})   # TaskClassification
+# ...or exactly what a decorated task would submit:
+#   client = KrauncherClient(estimate_only=True)
+#   c = (await my_task(epochs=3)).classification
+
+# 2. The assay of that analysis. The analyzer keeps the job ~1 h: store the
+#    assay itself (it is plain JSON), it outlives the job.
+assay = await analyzer.assay(c.analyzer_job_id)
+
+# 3. Compute coefficient on every GPU for that assay.
+try:
+    ladder = await client.ladder(assay)
+except AssayOutdated:
+    ...  # analyzer recalibrated since the assay was made: analyze again
+except KrauncherError:
+    ...  # no ladder access on this account (403), or another broker error
+```
+
+Assay (abridged):
+
+```jsonc
+{
+  "meta": { "schema_version": "assay/1", "calibration_id": "c-6c518e4b0bbf",
+            "analyzer_version": "0.1.0", "confidence": 0.9 },
+  "workload": {
+    "type": "ai_training", "mode": "training", "framework": "pytorch",
+    "model":   { "name": "BERT Base", "params_billions": 0.11, "precision": "fp16", ... },
+    "runtime": { "optimizer": "adamw", "inference_engine": null, ... },
+    "knobs":   { "batch_size": 16, "epochs": 3, "dataset_samples": 25000, ... },
+    "data":    { "dataset_mb": 84.0, "model_download_mb": 220.0 }
+  },
+  "requirements": { "min_vram_gb": 6, "vram_breakdown_gb": {...},
+                    "min_disk_gb": 1, "disk_breakdown_gb": {...}, "cpu_only": false },
+  "work": {
+    "reference_cu": 141953,                     // work on the reference card, CU
+    "phases_cu": { "compute": 125417, "warmup": 11016, "io": 2520, "setup": 3000 },
+    "reference_sec": 142.0,                     // the same work in seconds
+    "spread": { "factor": 1.026 }               // a slow host takes up to this × longer
+  },
+  "assay_key": "ak1...."                        // opaque, sealed; the ladder reads it
+}
+```
+
+Ladder:
+
+```jsonc
+{
+  "meta": { "schema_version": "ladder/2", "calibration_id": "c-6c518e4b0bbf",
+            "assay_calibration_id": "c-6c518e4b0bbf" },
+  "rows": [   // fastest first
+    { "gpu_id": "b200", "gpu_name": "B200 SXM", "vram_gb": 192, "compute_ratio": 0.678 }
+  ]
+}
+```
+
+Time on a GPU, from the assay and its ladder row:
+
+```python
+w = assay["work"]
+sec_per_cu = w["reference_sec"] / w["reference_cu"]        # the assay's own scale
+compute_sec = w["phases_cu"]["compute"] * sec_per_cu
+sec = row["compute_ratio"] * compute_sec + (w["reference_sec"] - compute_sec)
+```
+
+- **Send the assay back unchanged.** `assay_key` is sealed by the analyzer; an
+  edited or missing key is rejected (400). A CPU-only assay (`work: null`) or one
+  with no compute phase has nothing to rank (422).
+- **`calibration_id` dates the forecast.** An assay is valid until the analyzer
+  is recalibrated; after that `ladder()` raises `AssayOutdated` (409).
+- Rows cover every catalogue GPU with at least `requirements.min_vram_gb`.
+- Over HTTP: `POST https://krauncher.com/api/v1/ladder`, header `X-API-Key`,
+  body = the assay JSON. Tutorial `55_assay_ladder.py`.
+
+---
+
 ## MCP server — the estimate as an agent tool
 
 `krauncher-mcp` exposes the pre-run estimate as a single MCP tool,
@@ -545,4 +640,4 @@ Start at `01_remote_simple.py`. Then by topic: deps `02`, errors `03`, timeout
 vision training `18`, BERT/IMDB `20`, LoRA `21`, inference `22`/`30`–`34`,
 batched inference `35`/`36`. Values / adapters primitives: `run_code` with
 named in/out values `50`, `client.group()` envelope `52`, HuggingFace-native
-auto pre-fetch `53`, files in / artifacts out `54`.
+auto pre-fetch `53`, files in / artifacts out `54`, assay and GPU ladder `55`.
