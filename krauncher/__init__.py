@@ -64,12 +64,14 @@ from .exceptions import (
 )
 from .analyzer import TaskClassification
 from .data_source import DataSource
+from .manifest import DataManifest
 from .KrauncherClient import KrauncherClient
 from .models import Runner, TaskGroup, TaskHandle, TaskResult
 
 __all__ = [
     "KrauncherClient",
     "DataSource",
+    "DataManifest",
     "TaskClassification",
     "Runner",
     "TaskGroup",

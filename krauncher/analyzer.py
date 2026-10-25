@@ -20,6 +20,7 @@ import httpx
 
 from ._env import setting
 from .crypto import generate_keypair, derive_shared_secret, encrypt
+from .manifest import is_manifest
 
 logger = logging.getLogger("krauncher.analyzer")
 
@@ -222,6 +223,13 @@ class AssayOutdated(RuntimeError):
     analyze the code again for a fresh assay. Raised by KrauncherClient.ladder()."""
 
 
+def analyzer_kwargs(kwargs: dict) -> dict:
+    """The call arguments the analyzer receives: JSON-safe scalars, and data
+    manifests (the size of the training set, krauncher.manifest) as plain dicts."""
+    return {k: (dict(v) if is_manifest(v) else v) for k, v in kwargs.items()
+            if isinstance(v, (int, float, bool, str)) or is_manifest(v)}
+
+
 class AnalyzerClient:
     """Async client for cas-analyzer with optional E2E encryption."""
 
@@ -298,11 +306,7 @@ class AnalyzerClient:
             if dataset_mb is not None:
                 body["dataset_mb"] = dataset_mb
             if kwargs:
-                # Filter to JSON-safe scalar values only
-                safe_kwargs = {
-                    k: v for k, v in kwargs.items()
-                    if isinstance(v, (int, float, bool, str))
-                }
+                safe_kwargs = analyzer_kwargs(kwargs)
                 if safe_kwargs:
                     body["kwargs"] = safe_kwargs
 

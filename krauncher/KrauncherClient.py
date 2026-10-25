@@ -6,6 +6,7 @@ from __future__ import annotations
 
 import functools
 import inspect
+import json
 import logging
 import os
 import time
@@ -26,6 +27,7 @@ from .credentials import collect_credentials
 from ._env import setting
 from .data_source import DataSource
 from .exceptions import KrauncherError, ValueTransferError
+from .manifest import is_manifest
 from .models import Runner, TaskGroup, TaskHandle, _check_response
 from .serializer import serialize_function
 
@@ -114,14 +116,15 @@ _CONFIG_CACHE_TTL: float = 900.0  # 15 minutes
 def _kwargs_cache_key(merged_kwargs: dict[str, Any]) -> tuple:
     """Cache key for one classification: the call arguments the analyzer sees.
 
-    Only scalars are keyed, because only scalars are sent — both the client
-    (``AnalyzerClient.classify``) and the analyzer (``_substitute_kwargs``)
-    drop everything else, so a changed list or dict cannot change the answer
-    and must not cost a re-analysis.
+    Only scalars and data manifests are keyed, because only they are sent —
+    the client (``AnalyzerClient.classify``) drops everything else, so a
+    changed list or other dict cannot change the answer and must not cost a
+    re-analysis.
     """
     return tuple(sorted(
-        (k, v) for k, v in merged_kwargs.items()
-        if isinstance(v, (int, float, bool, str))
+        (k, json.dumps(dict(v), sort_keys=True) if is_manifest(v) else v)
+        for k, v in merged_kwargs.items()
+        if isinstance(v, (int, float, bool, str)) or is_manifest(v)
     ))
 
 

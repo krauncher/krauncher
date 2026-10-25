@@ -211,6 +211,46 @@ A decorated `@client.task` function classifies once and reuses that result for
 every later call, but its classification cannot be passed in or out — reuse
 across processes is a `run_code` capability.
 
+### Training-set size — `DataManifest`
+
+The analyzer reads the code and the call arguments, never the data. When the
+training set is defined by a file the code reads at run time (a file list, a
+CSV or JSON-lines manifest), its size — and so the step count and the time —
+is unknown to the analysis, which falls back to the whole corpus a path names.
+Pass the size as a call argument:
+
+```python
+from krauncher import DataManifest
+
+train = DataManifest.from_file("filelists/train_subset_625.txt")   # counted locally
+# or stated:  DataManifest(entries=625, name="train_subset_625.txt")
+
+@client.task(vram_gb=24, data="ljspeech")
+def train_tts(train_list, batch_size=18, epochs=2):
+    items = open("/data/" + train_list["name"]).readlines()        # a plain dict here
+    ...
+
+handle = await train_tts(train_list=train, batch_size=18, epochs=2)
+```
+
+- `from_file(path, role="train", format=None, header=None)` counts entries:
+  `"lines"` (non-empty lines — file lists, `path|text`, `wav.scp`), `"csv"`
+  (rows; the first is a header unless `header=False`), `"jsonl"`; the format
+  follows the extension (`.csv`, `.jsonl` / `.ndjson`, else lines).
+- **Counted** from a file, the number is the base of the training set: what the
+  code does on top of it — a subset it takes, negatives it samples — is still
+  applied by the analyzer. **Stated** (`DataManifest(entries=...)`), it is the
+  final set the loop iterates per epoch, taken as it is: the analyzer reports a
+  contradiction with the code but does not correct it.
+- Loop cut-offs (`max_steps`, a cap on batches per epoch) are not part of the
+  set; the analyzer applies them to the step count either way.
+- One `role="train"` manifest per call; `role="val"` is accepted and not used for
+  the training set. The manifest must be referenced by the task's code, or a
+  counted one is ignored (a stated one applies regardless).
+- The task function receives a plain dict (`train_list["name"]`,
+  `train_list["entries"]`). The file itself is not carried: send it with
+  `files=` or a data source.
+
 ---
 
 ## Running a code block — `run_code` (values API)
