@@ -20,7 +20,7 @@ import httpx
 
 from ._env import setting
 from .crypto import generate_keypair, derive_shared_secret, encrypt
-from .manifest import is_manifest
+from .manifest import is_manifest, is_model_manifest
 
 logger = logging.getLogger("krauncher.analyzer")
 
@@ -224,10 +224,12 @@ class AssayOutdated(RuntimeError):
 
 
 def analyzer_kwargs(kwargs: dict) -> dict:
-    """The call arguments the analyzer receives: JSON-safe scalars, and data
-    manifests (the size of the training set, krauncher.manifest) as plain dicts."""
-    return {k: (dict(v) if is_manifest(v) else v) for k, v in kwargs.items()
-            if isinstance(v, (int, float, bool, str)) or is_manifest(v)}
+    """The call arguments the analyzer receives: JSON-safe scalars, and data and
+    model manifests (krauncher.manifest) as plain dicts."""
+    def tagged(v):
+        return is_manifest(v) or is_model_manifest(v)
+    return {k: (dict(v) if tagged(v) else v) for k, v in kwargs.items()
+            if isinstance(v, (int, float, bool, str)) or tagged(v)}
 
 
 class AnalyzerClient:

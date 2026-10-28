@@ -16,7 +16,8 @@ def test_lines_file(tmp_path):
     p.write_text("wavs/a.wav|one\nwavs/b.wav|two\n\nwavs/c.wav|three\n")
     m = DataManifest.from_file(p)
     assert m == {"__krauncher__": "data_manifest", "v": 1, "role": "train", "entries": 3,
-                 "entries_source": "file", "name": "train_subset.txt", "format": "lines"}
+                 "entries_source": "file", "name": "train_subset.txt", "format": "lines",
+                 "lengths": {"text_chars": {"max": 5, "p99": 5, "mean": 3.67}}, "lengths_source": "file"}
 
 
 def test_csv_header_and_quoted_newline(tmp_path):
@@ -89,3 +90,43 @@ def test_analyzer_kwargs_keep_scalars_and_manifests():
     m = DataManifest(entries=625)
     out = analyzer_kwargs({"epochs": 2, "train_list": m, "cfg": {"a": 1}, "xs": [1, 2]})
     assert out == {"epochs": 2, "train_list": dict(m)} and type(out["train_list"]) is dict
+
+
+def _wav(path, seconds, rate=22050):
+    import wave
+    with wave.open(str(path), "wb") as w:
+        w.setnchannels(1)
+        w.setsampwidth(2)
+        w.setframerate(rate)
+        w.writeframes(b"\0\0" * int(seconds * rate))
+
+
+def test_audio_durations_from_the_wav_headers(tmp_path):
+    (tmp_path / "wavs").mkdir()
+    _wav(tmp_path / "wavs" / "a.wav", 1.5)
+    _wav(tmp_path / "wavs" / "b.wav", 4.0)
+    p = tmp_path / "list.txt"
+    p.write_text("wavs/a.wav|short text\nwavs/b.wav|a somewhat longer text\n")
+    m = DataManifest.from_file(p, audio_root=tmp_path)
+    assert m["lengths"]["audio_seconds"]["max"] == 4.0
+    assert m["lengths"]["sample_rate"] == 22050
+    assert m["lengths"]["text_chars"]["max"] == len("a somewhat longer text")
+    # without the audio: the text lengths only
+    assert "audio_seconds" not in DataManifest.from_file(p)["lengths"]
+
+
+def test_csv_text_columns_and_paths(tmp_path):
+    p = tmp_path / "meta.csv"
+    p.write_text("path,text\nclips/a.wav,hello there\nclips/b.wav,hi\n")
+    m = DataManifest.from_file(p)
+    assert m["lengths"]["text_chars"]["max"] == len("hello there")
+
+
+def test_stated_lengths():
+    m = DataManifest(entries=625, lengths={"text_chars": 187, "audio_seconds": 10.1})
+    assert m["lengths"] == {"text_chars": {"max": 187}, "audio_seconds": {"max": 10.1}}
+    assert m["lengths_source"] == "manual"
+    with pytest.raises(ValueError):
+        DataManifest(entries=1, lengths={"frames": 870})
+    with pytest.raises(ValueError):
+        DataManifest(entries=1, lengths={"text_chars": 0})

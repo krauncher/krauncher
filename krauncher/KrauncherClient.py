@@ -27,7 +27,7 @@ from .credentials import collect_credentials
 from ._env import setting
 from .data_source import DataSource
 from .exceptions import KrauncherError, ValueTransferError
-from .manifest import is_manifest
+from .manifest import MODEL_MANIFEST_KEY, ModelManifest, is_manifest
 from .models import Runner, TaskGroup, TaskHandle, _check_response
 from .serializer import serialize_function
 
@@ -401,6 +401,7 @@ class KrauncherClient:
         dataset_size: float | None = None,
         stream_stderr: bool | None = None,
         artifacts: bool = False,
+        model_manifest: ModelManifest | None = None,
     ) -> Callable:
         """Decorator that marks a function as a remote GPU task.
 
@@ -444,6 +445,10 @@ class KrauncherClient:
                 directories are skipped — they are caches libraries drop in
                 ``~``, not task output.  Artifacts share the result's inline
                 size budget; for anything large use a data source instead.
+            model_manifest: Facts of the checkpoint the task loads
+                (:class:`krauncher.ModelManifest`: weights bytes, config dims,
+                KV cache dtype) for the memory estimate.  Sent to the analyzer
+                only; the task function does not receive it.  Optional.
         """
 
         client = self
@@ -490,7 +495,7 @@ class KrauncherClient:
                     group_id=group_id, provider=provider,
                     disk_gb=disk_gb, dataset_size=dataset_size,
                     stream_stderr=stream_stderr, artifacts=artifacts,
-                    files=files,
+                    files=files, model_manifest=model_manifest,
                 )
 
             # Store metadata for introspection and group envelopes
@@ -508,7 +513,7 @@ class KrauncherClient:
                 "data_urls": data_urls, "data": data, "output": output,
                 "provider": provider, "disk_gb": disk_gb,
                 "dataset_size": dataset_size, "stream_stderr": stream_stderr,
-                "artifacts": artifacts,
+                "artifacts": artifacts, "model_manifest": model_manifest,
             }
 
             return wrapper
@@ -550,7 +555,8 @@ class KrauncherClient:
             if opts["vram_gb"] is not None:
                 vram = classify_explicit(opts["vram_gb"]).min_vram_gb
             else:
-                cls = await self._classify(t._krauncher_code, t._krauncher_defaults or {})
+                cls = await self._classify(t._krauncher_code, t._krauncher_defaults or {},
+                                           model_manifest=opts.get("model_manifest"))
                 vram = cls.min_vram_gb
             vram_floor = max(vram_floor, vram)
             for key, bag in pins.items():
@@ -605,6 +611,7 @@ class KrauncherClient:
         stream_stderr: bool | None = None,
         artifacts: bool = False,
         files: dict[str, bytes] | None = None,
+        model_manifest: ModelManifest | None = None,
     ) -> TaskHandle:
         """Submission core shared by :meth:`task` and :meth:`run_code`.
 
@@ -623,6 +630,7 @@ class KrauncherClient:
                 vram_gb=vram_gb, data=data,
                 dataset_size=dataset_size,
                 classification_cache=classification_cache,
+                model_manifest=model_manifest,
             )
 
         if group is not None:
@@ -674,6 +682,7 @@ class KrauncherClient:
         data: str | None = None,
         dataset_size: float | None = None,
         classification_cache: dict | None = None,
+        model_manifest: ModelManifest | None = None,
     ) -> TaskClassification:
         """Analysis phase: classify the code via cas-analyzer.
 
@@ -697,8 +706,12 @@ class KrauncherClient:
             try:
                 # Query broker for data source sizes to improve CU estimation
                 dataset_mb = dataset_size or await client._resolve_dataset_mb(data)
+                # The model manifest rides with the call arguments to the
+                # analyzer only, under a key no signature can declare.
+                analyzer_args = (dict(merged_kwargs, **{MODEL_MANIFEST_KEY: model_manifest})
+                                 if model_manifest is not None else merged_kwargs)
                 classification = await client._analyzer.classify(
-                    code_string, dataset_mb=dataset_mb, kwargs=merged_kwargs,
+                    code_string, dataset_mb=dataset_mb, kwargs=analyzer_args,
                 )
             except KrauncherError:
                 raise
