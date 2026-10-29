@@ -14,3 +14,6 @@ calibration/
 /received/
 
 *.sh
+
+# Local scripts, not part of the repository
+other/
