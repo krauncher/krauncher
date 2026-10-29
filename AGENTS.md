@@ -113,6 +113,7 @@ All keyword-only.
 | `dataset_size` | `float`      | `None`  | Dataset size (MB) for CU estimation; overrides auto-resolved size.      |
 | `stream_stderr`| `bool`       | `None`  | Per-task override of client `stream_stderr`.                            |
 | `artifacts`    | `bool`       | `False` | Return the files the task wrote beside itself → `result.artifacts`.     |
+| `model_manifest`| `ModelManifest` | `None` | Facts of the checkpoint the task loads, for the memory estimate; sent to the analyzer only (see below). |
 
 **GPU selection:** prefer leaving `vram_gb=None` (auto-classify). Use
 `gpu_name`/`gpu_arch`/`vram_gb` only to constrain.
@@ -250,6 +251,48 @@ handle = await train_tts(train_list=train, batch_size=18, epochs=2)
 - The task function receives a plain dict (`train_list["name"]`,
   `train_list["entries"]`). The file itself is not carried: send it with
   `files=` or a data source.
+- **Sample lengths**, for the memory estimate (the activations of a sequence
+  model grow with the longest sample of a batch). Counted from a file, every
+  text field gives its length in characters (max, p99, mean), read in the same
+  pass as the count; `from_file(..., audio_root="wavs/")` also reads the
+  durations of the WAV files the entries name, from their headers. Stated:
+  `DataManifest(entries=625, lengths={"text_chars": 187, "audio_seconds": 10.1})`
+  — a number is the max, or pass `{"max": ..., "p99": ..., "mean": ...}`;
+  `sample_rate` (int) is accepted beside them.
+
+### Checkpoint facts — `ModelManifest`
+
+The analyzer reads the code, not the checkpoint the code loads. The weight
+size, layer dimensions and KV cache dtype of that checkpoint drive the VRAM
+estimate. Pass them with `model_manifest=`:
+
+```python
+from krauncher import ModelManifest
+
+m = ModelManifest.from_hf("meta-llama/Llama-3.1-8B-Instruct")   # config + safetensors headers, not the weights
+# or a local checkpoint:  ModelManifest.from_dir("checkpoints/llama-8b")
+# or stated:              ModelManifest(weights_bytes=16_060_000_000,
+#                                       config={"num_hidden_layers": 32, "hidden_size": 4096},
+#                                       kv_cache_dtype="fp8")
+
+@client.task(model_manifest=m)
+def serve(prompts):
+    ...
+```
+
+- `from_hf(repo, revision="main", token=None)` reads `config.json`,
+  `hf_quant_config.json` and the safetensors index (or the single file's
+  header, by a range request); a gated or private repo needs `token=` or
+  `HF_TOKEN`. `from_dir(path)` reads the same files from a `from_pretrained`
+  directory.
+- Read: `weights_bytes` (tensor bytes of the safetensors files), `config`
+  (the transformers `config.json` keys the analyzer uses; a vision-language
+  model's decoder is read from `text_config`) and `kv_cache_dtype` (`fp8`
+  when the checkpoint declares an FP8 KV cache). Stated: at least one of the
+  three; `config` keys outside that list raise `ValueError`.
+- Sent to the analyzer only: the task function does not receive it and its
+  signature does not declare it. `run_code(..., model_manifest=m)` accepts it
+  too; `estimate_code` does not.
 
 ---
 

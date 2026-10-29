@@ -209,6 +209,16 @@ For larger or registered datasets, use the **data bridge** (`data_urls=` /
   submitting, and `run_code(code, ..., classification=...)` then executes
   without a second analysis. `CAS_ESTIMATE_ONLY=true` does the same for
   decorated tasks; `POST /api/estimate` returns per-GPU predicted time and cost.
+- **Tell the analyzer what the code does not show.** A `DataManifest` passed as
+  a call argument carries the size of the training set and the lengths of its
+  samples, counted locally from a file list (`DataManifest.from_file(...)`);
+  `model_manifest=ModelManifest.from_hf(repo)` carries the checkpoint's weight
+  size, dimensions and KV cache dtype for the VRAM estimate. See
+  [AGENTS.md](AGENTS.md).
+- **Assay and GPU ladder.** `analyzer.assay(job_id)` freezes an analysis into a
+  plain-JSON record of the work; `await client.ladder(assay)` returns its
+  compute coefficient on every GPU. See
+  [tutorial/55](tutorial/55_assay_ladder.py).
 
 ---
 
