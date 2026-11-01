@@ -83,3 +83,11 @@ def test_settings_read_both_prefixes(monkeypatch):
     monkeypatch.setenv("KRAUNCHER_API_KEY", "new-spelling")
     assert setting("API_KEY") == "new-spelling"
     assert setting("NOTHING_SET", "fallback") == "fallback"
+
+
+def test_manifest_hints_reach_the_classification():
+    from krauncher.analyzer import AnalyzerClient
+    hints = [{"key": "kv_cache_dtype", "reason": "KV cache counted in the compute dtype"}]
+    c = AnalyzerClient._parse_result({"min_hardware": {"min_vram_gb": 21, "manifest_hints": hints}})
+    assert c.manifest_hints == hints
+    assert AnalyzerClient._parse_result({"min_hardware": {"min_vram_gb": 21}}).manifest_hints == []
