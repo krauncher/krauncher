@@ -45,6 +45,12 @@ def test_from_dir_reads_config_quant_and_index(tmp_path):
     assert "vision_config" not in m["config"]
 
 
+def test_from_dir_keeps_the_ffn_width(tmp_path):
+    # the analyzer sizes vLLM's non-KV part from it (cas-analyzer declared_model.ffn_of)
+    (tmp_path / "config.json").write_text(json.dumps({"num_hidden_layers": 2, "intermediate_size": 14336}))
+    assert ModelManifest.from_dir(tmp_path)["config"]["intermediate_size"] == 14336
+
+
 def test_from_dir_sums_shard_headers_without_index(tmp_path):
     (tmp_path / "config.json").write_text(json.dumps({"num_hidden_layers": 2}))
     _safetensors(tmp_path / "layers-0.safetensors", {"a": ("BF16", 100), "b": ("F8_E4M3", 50)})
