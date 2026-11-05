@@ -1024,6 +1024,15 @@ class TaskHandle:
                     size_str = f" ({size_mb:.0f} MB)" if size_mb else ""
                     eta_str = f", ETA ~{eta_sec:.0f}s" if eta_sec else ""
                     logger.info("Downloading assets%s%s", size_str, eta_str)
+                elif name == "download_progress":
+                    done = event_data.get("done_mb", 0)
+                    total = event_data.get("total_mb")
+                    pct = event_data.get("pct")
+                    eta = event_data.get("eta_sec")
+                    amount = f"{done:.0f}/{total:.0f} MB ({pct:.0f}%)" if total else f"{done:.0f} MB"
+                    eta_str = f", ETA ~{eta:.0f}s" if eta is not None else ""
+                    logger.info("Downloading: %s, %.1f MB/s%s",
+                                amount, event_data.get("mbps", 0), eta_str)
                 elif name == "download_complete":
                     elapsed = event_data.get("elapsed_sec")
                     mbps = event_data.get("actual_mbps")
