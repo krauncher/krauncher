@@ -64,6 +64,9 @@ class TaskClassification:
     samples_bucket: str | None = None         # "tiny" | "small" | "medium" | "large"
     precision: str | None = None              # "fp32" | "fp16" | "bf16" | "fp8" | ... — dtype axis for broker bucket lookup
     cu_findings: list[str] = field(default_factory=list)  # training loop breakdown from analyzer
+    # ModelManifest values whose absence sent the estimate to a fallback:
+    # [{"key", "reason"}]; passing them (ModelManifest) improves the forecast
+    manifest_hints: list[dict] = field(default_factory=list)
     analyzer_time: float | None = None              # analyzer round-trip time in seconds
     analyzer_job_id: str | None = None              # analyzer's job id (correlation key for results)
     # Universal pass-through: any analyzer duration_estimate field not mapped to a
@@ -345,6 +348,9 @@ class AnalyzerClient:
                     if result.cu_findings:
                         for finding in result.cu_findings:
                             _logger.debug("  CU: %s", finding)
+                    for h in result.manifest_hints:
+                        _logger.warning("ModelManifest: %s would improve the estimate (%s)",
+                                        h.get("key"), h.get("reason"))
                     return result
                 elif data["status"] == "failed":
                     raise RuntimeError(f"Analyzer failed: {data.get('error', 'unknown')}")
@@ -438,5 +444,6 @@ class AnalyzerClient:
             samples_bucket=samples_bkt,
             precision=hw.get("precision"),
             cu_findings=cu_findings,
+            manifest_hints=hw.get("manifest_hints") or [],
             extra_debug=extra_debug,
         )

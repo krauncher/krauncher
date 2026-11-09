@@ -224,7 +224,7 @@ MODEL_VERSION = 1
 # The config.json keys the analyzer reads, by their transformers names.
 CONFIG_KEYS = (
     "num_hidden_layers", "hidden_size", "num_attention_heads", "num_key_value_heads", "head_dim",
-    "vocab_size", "tie_word_embeddings", "intermediate_size", "max_position_embeddings",
+    "vocab_size", "tie_word_embeddings", "max_position_embeddings", "intermediate_size",
     "layer_types", "sliding_window", "linear_num_key_heads", "linear_num_value_heads",
     "linear_key_head_dim", "linear_value_head_dim", "linear_conv_kernel_dim", "mamba_ssm_dtype",
 )
