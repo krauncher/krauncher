@@ -621,8 +621,11 @@ sec = row["compute_ratio"] * ph["compute"] + warmup + ph["io"] + ph["setup"]
 - Catalogues: `GET https://krauncher.com/api/v1/catalog/gpus` (every GPU the
   ladder ranks: `gpu_id`, name, VRAM, architecture, provider aliases, the
   reference card) and `GET .../api/v1/catalog/models` (the models the analyzer
-  knows: a `model.id` containing a model's `key` gets its size), schema
-  `catalog/1`.
+  knows: a `model.id` containing a model's `key` gets its size) and
+  `GET .../api/v1/catalog/vocabulary` (the values `type`, `mode`, `arch_type`,
+  `precision`, `inference_engine` may take; `covered: false` = accepted,
+  outside the formula, named in `findings`), schema `catalog/1`. A value
+  outside the vocabulary is rejected (422).
 
 ---
 
