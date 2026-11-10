@@ -612,6 +612,11 @@ sec = row["compute_ratio"] * ph["compute"] + warmup + ph["io"] + ph["setup"]
 - Over HTTP: `POST https://krauncher.com/api/v1/assay/estimate` and
   `POST https://krauncher.com/api/v1/ladder`, header `X-API-Key`, body = the
   assay JSON. Tutorial `55_assay_ladder.py`.
+- Catalogues: `GET https://krauncher.com/api/v1/catalog/gpus` (every GPU the
+  ladder ranks: `gpu_id`, name, VRAM, architecture, provider aliases, the
+  reference card) and `GET .../api/v1/catalog/models` (the models the analyzer
+  knows: a `model.id` containing a model's `key` gets its size), schema
+  `catalog/1`.
 
 ---
 
