@@ -608,6 +608,9 @@ sec = row["compute_ratio"] * ph["compute"] + warmup + ph["io"] + ph["setup"]
   (`work: null`, CPU-only) has nothing to rank (422).
 - `calibration_id` names the calibration the forecast comes from; an assay
   carries none, so it never goes out of date — ask again for a current forecast.
+- **Caching**: the same assay gives the same estimate while
+  `meta.analyzer_version` and `meta.calibration_id` stay the same; cache by
+  all three.
 - Rows cover every catalogue GPU with at least `requirements.min_vram_gb`.
 - Over HTTP: `POST https://krauncher.com/api/v1/assay/estimate` and
   `POST https://krauncher.com/api/v1/ladder`, header `X-API-Key`, body = the
