@@ -547,6 +547,7 @@ stated takes the formula's default, and the estimate says which:
                  "arch_type": "transformer", "peft": null, "manifest": null, ... },
     "runtime": { "inference_engine": "vllm", "optimizer": null, ... },
     "knobs":   { "batch_size": 32, "epochs": null, "max_steps": null, "dataset_samples": null,
+                 "engine_requests": null,      // requests handed to vllm / sglang / tensorrt_llm: the volume of an engine
                  "input_tokens": 512, "max_new_tokens": 512, "image_size": null, ... },
     "data":    { "dataset_mb": null, "loads_model_weights": true, "downloads_model": false, ... },
     "signals": null                            // an analysis seals here what it read from the code; opaque
@@ -566,7 +567,8 @@ Estimate (`estimate/1`):
     "phases_cu": { "compute": 4808, "warmup": 124880, "io": 1000, "setup": 3000 },
     "reference_sec": 133.7,                    // the same work in seconds
     "spread": { "factor": 1.011 },             // a slow host takes up to this × longer
-    "steps": 1, "steps_basis": "llm_decode"
+    "steps": 1, "steps_basis": "llm_decode",
+    "units": 32, "units_basis": "requests"     // what the work is for: requests (LLM), generations (diffusion)
   },
   "data": { "model_download_mb": null, "weights_load_gb": 16.0 },
   "findings": [],     // the defaults the forecast used, e.g. "workload.knobs.batch_size not stated: 1"
@@ -595,6 +597,10 @@ warmup = row["warmup_sec"] if row["warmup_sec"] is not None else ph["warmup"]
 sec = row["compute_ratio"] * ph["compute"] + warmup + ph["io"] + ph["setup"]
 ```
 
+- **Work per unit**: `phases_cu.compute / units`; `warmup`, `io` and `setup`
+  are the start of a run. For an inference engine state
+  `knobs.engine_requests`: the decode steps then follow from the requests
+  the engine runs at once.
 - **Hints make the forecast more precise.** Each `hints` key is an assay path
   that was not stated; add it and ask again.
 - **Send an analysis's assay back unchanged.** `signals` is sealed by the
