@@ -571,7 +571,7 @@ Estimate (`estimate/1`):
     "reference_sec": 133.7,                    // the same work in seconds
     "spread": { "factor": 1.011 },             // a slow host takes up to this × longer
     "steps": 1, "steps_basis": "llm_decode",
-    "units": 32, "units_basis": "requests"     // what the work is for: requests (LLM), generations (diffusion)
+    "units": 32, "units_basis": "requests"     // what the work is for: requests (LLM), outputs = images or clips (diffusion)
   },
   "data": { "model_download_mb": null, "weights_load_gb": 16.0 },
   "findings": [],     // the defaults the forecast used, e.g. "workload.knobs.batch_size not stated: 1"
@@ -585,7 +585,8 @@ Ladder (`ladder/3`):
 {
   "meta": { "schema_version": "ladder/3", "calibration_id": "c-1f97f066fbc6" },
   "rows": [   // fastest first
-    { "gpu_id": "b200_nvl", "gpu_name": "B200 NVL", "vram_gb": 180, "compute_ratio": 0.6696, "warmup_sec": null }
+    { "gpu_id": "b200_nvl", "gpu_name": "B200 NVL", "vram_gb": 180, "compute_ratio": 0.6696, "warmup_sec": null,
+      "load_sec": 3.3 }   // reading the weights into this card: a replica start or a model swap
   ]
 }
 ```
