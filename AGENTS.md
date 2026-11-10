@@ -561,7 +561,8 @@ Estimate (`estimate/1`):
 
 ```jsonc
 {
-  "meta": { "schema_version": "estimate/1", "calibration_id": "c-1f97f066fbc6", "confidence": 0.4 },
+  "meta": { "schema_version": "estimate/1", "calibration_id": "c-1f97f066fbc6", "confidence": 0.4,
+            "calibration_basis": "calibrated" },   // or extrapolated, parent, roofline, knn, uncalibrated, llm
   "requirements": { "min_vram_gb": 30, "vram_breakdown_gb": {...},
                     "min_disk_gb": 19, "disk_breakdown_gb": {...}, "cpu_only": false },
   "work": {
