@@ -548,6 +548,8 @@ stated takes the formula's default, and the estimate says which:
     "runtime": { "inference_engine": "vllm", "optimizer": null, ... },
     "knobs":   { "batch_size": 32, "epochs": null, "max_steps": null, "dataset_samples": null,
                  "engine_requests": null,      // requests handed to vllm / sglang / tensorrt_llm: the volume of an engine
+                 "num_generations": null, "num_frames": null, "frame_height": null, "frame_width": null,
+                 "guidance_scale": null,       // diffusion: images and video (type diffusion_inference)
                  "input_tokens": 512, "max_new_tokens": 512, "image_size": null, ... },
     "data":    { "dataset_mb": null, "loads_model_weights": true, "downloads_model": false, ... },
     "signals": null                            // an analysis seals here what it read from the code; opaque
