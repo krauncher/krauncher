@@ -1063,27 +1063,41 @@ class KrauncherClient:
             _check_response(resp)
             return resp.json()
 
+    async def estimate(self, assay: dict[str, Any]) -> dict[str, Any]:
+        """What an assay/2 needs and how much work it is: estimate/1 (VRAM,
+        disk, the work on the reference card in CU, the defaults applied and
+        hints on what to state for a more precise forecast).
+
+        *assay* is what :meth:`AnalyzerClient.assay` returned, or an assay/2
+        written without code (cas-analyzer doc/contracts-v2.md). No prices.
+        """
+        async with httpx.AsyncClient(timeout=30.0) as session:
+            resp = await session.post(
+                f"{self.broker_url}/v1/assay/estimate",
+                json=assay,
+                headers={"X-API-Key": self.api_key},
+            )
+        _check_response(resp)
+        return resp.json()
+
     async def ladder(self, assay: dict[str, Any]) -> dict[str, Any]:
-        """Each GPU's compute coefficient for an assay's work — no time, no prices.
+        """The work of an assay/2 and each GPU's compute coefficient for it —
+        no time, no prices: ``{"estimate": estimate/1, "ladder": ladder/3}``.
 
         A row's ``compute_ratio`` is the compute phase on that GPU over the
-        compute phase on the reference card (the assay's ``phases_cu.compute``);
-        the assay's other phases do not depend on the GPU and are not in the
-        ladder. *assay* is what :meth:`AnalyzerClient.assay` returned. The broker
-        serves this only to accounts with ladder access enabled. Raises
-        :class:`~krauncher.analyzer.AssayOutdated` when the analyzer was
-        recalibrated after the assay was made (analyze the code again), and
-        :class:`KrauncherError` when the account has no ladder access.
+        compute phase on the reference card (``estimate["work"]["phases_cu"]
+        ["compute"]``); the other phases do not depend on the GPU and are not
+        in the ladder. *assay* is what :meth:`AnalyzerClient.assay` returned,
+        or an assay/2 written without code. The broker serves this only to
+        accounts with ladder access enabled; raises :class:`KrauncherError`
+        when the account has none.
         """
-        from .analyzer import AssayOutdated
         async with httpx.AsyncClient(timeout=30.0) as session:
             resp = await session.post(
                 f"{self.broker_url}/v1/ladder",
                 json=assay,
                 headers={"X-API-Key": self.api_key},
             )
-        if resp.status_code == 409:
-            raise AssayOutdated(resp.json().get("detail"))
         if resp.status_code == 403:
             raise KrauncherError("Ladder access is not enabled for this account.")
         _check_response(resp)

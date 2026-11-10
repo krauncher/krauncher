@@ -206,7 +206,7 @@ Every submission is analysis (classify the code, price it) then execution
 | Size a whole sequence before submitting anything | `await client.group(task_a, task_b)` |
 | Analyze everything, submit nothing | `estimate_only=True` / `CAS_ESTIMATE_ONLY` |
 | Per-GPU predicted time and cost, before any client call | `POST /api/estimate` (see below) |
-| A frozen record of the work, and its compute coefficient on every GPU | `analyzer.assay(job_id)` → `client.ladder(assay)` (see below) |
+| The facts of the work as a document (from code or written by hand), its VRAM and work, its compute coefficient on every GPU | `analyzer.assay(job_id)` → `client.estimate(assay)` / `client.ladder(assay)` (see below) |
 
 A decorated `@client.task` function classifies once and reuses that result for
 every later call, but its classification cannot be passed in or out — reuse
@@ -486,95 +486,126 @@ Response (rows sorted cheapest-first by `estimated_cost_usd`):
 
 ## Assay and GPU ladder — the work as a document, its compute coefficient on every GPU
 
-The analyzer issues an **assay** (schema `assay/1`) for each analysis: what the
-workload is and how much work it is, measured on the reference card. The
-**ladder** gives every GPU's coefficient for the assay's compute phase against
-the reference card, fastest first — no time, no prices. The other phases
-(warmup, I/O, setup) do not depend on the GPU and stay as the assay states
-them. Nothing runs on a GPU.
-The ladder is served only to accounts with ladder access (`GET /v1/me` →
-`"ladder_access": true`); the assay is available to every account.
+The analyzer issues an **assay** (schema `assay/2`) for each analysis: the
+facts of the payload — what the code does, the model, the run parameters. An
+assay can also be **written without code**: state the model and the run, and
+get the same forecast. From an assay:
+
+- **estimate** (`estimate/1`): what the payload needs (VRAM, disk) and how much
+  work it is on the reference card, in CU — for every account;
+- **ladder** (`ladder/3`): every GPU's coefficient for the compute phase
+  against the reference card, fastest first — no time, no prices; served only
+  to accounts with ladder access (`GET /v1/me` → `"ladder_access": true`).
+
+The other phases (warmup, I/O, setup) do not depend on the GPU and stay as the
+estimate states them. Nothing runs on a GPU.
 
 ```python
 from krauncher import KrauncherClient, KrauncherError
-from krauncher.analyzer import AssayOutdated
 
 client = KrauncherClient()
 
-# 1. Analyze. Either the source as written:
+# 1a. The assay of an analysis. Either the source as written:
 analyzer = client.analyzer()
 c = await analyzer.classify(source, kwargs={"epochs": 3})   # TaskClassification
 # ...or exactly what a decorated task would submit:
 #   client = KrauncherClient(estimate_only=True)
 #   c = (await my_task(epochs=3)).classification
-
-# 2. The assay of that analysis. The analyzer keeps the job ~1 h: store the
-#    assay itself (it is plain JSON), it outlives the job.
+# The analyzer keeps the job ~1 h: store the assay itself (plain JSON).
 assay = await analyzer.assay(c.analyzer_job_id)
 
-# 3. Compute coefficient on every GPU for that assay.
+# 1b. ...or an assay written without code:
+assay = {"meta": {"schema_version": "assay/2"},
+         "workload": {"type": "llm_inference", "mode": "inference",
+                      "model": {"id": "meta-llama/Llama-3.1-8B-Instruct", "precision": "bf16",
+                                "arch_type": "transformer"},
+                      "runtime": {"inference_engine": "vllm"},
+                      "knobs": {"batch_size": 32, "input_tokens": 512, "max_new_tokens": 512},
+                      "data": {"loads_model_weights": True}}}
+
+# 2. What it needs and how much work it is (every account).
+estimate = await client.estimate(assay)
+
+# 3. The work and the compute coefficient on every GPU (ladder access).
 try:
-    ladder = await client.ladder(assay)
-except AssayOutdated:
-    ...  # analyzer recalibrated since the assay was made: analyze again
+    out = await client.ladder(assay)       # {"estimate": ..., "ladder": ...}
 except KrauncherError:
     ...  # no ladder access on this account (403), or another broker error
 ```
 
-Assay (abridged):
+Assay (`assay/2`, abridged). Every field may be null or left out; what is not
+stated takes the formula's default, and the estimate says which:
 
 ```jsonc
 {
-  "meta": { "schema_version": "assay/1", "calibration_id": "c-6c518e4b0bbf",
-            "analyzer_version": "0.1.0", "confidence": 0.9 },
+  "meta": { "schema_version": "assay/2", "analyzer_version": "0.1.0" },  // null when written by hand
   "workload": {
-    "type": "ai_training", "mode": "training", "framework": "pytorch",
-    "model":   { "name": "BERT Base", "params_billions": 0.11, "precision": "fp16", ... },
-    "runtime": { "optimizer": "adamw", "inference_engine": null, ... },
-    "knobs":   { "batch_size": 16, "epochs": 3, "dataset_samples": 25000, ... },
-    "data":    { "dataset_mb": 84.0, "model_download_mb": 220.0 }
-  },
-  "requirements": { "min_vram_gb": 6, "vram_breakdown_gb": {...},
-                    "min_disk_gb": 1, "disk_breakdown_gb": {...}, "cpu_only": false },
-  "work": {
-    "reference_cu": 141953,                     // work on the reference card, CU
-    "phases_cu": { "compute": 125417, "warmup": 11016, "io": 2520, "setup": 3000 },
-    "reference_sec": 142.0,                     // the same work in seconds
-    "spread": { "factor": 1.026 }               // a slow host takes up to this × longer
-  },
-  "assay_key": "ak1...."                        // opaque, sealed; the ladder reads it
+    "type": "llm_inference",                   // what the code does: llm_inference, image_classification_cnn,
+                                               // object_detection, segmentation, diffusion_inference, gan, tts, rl, nerf, ...
+    "mode": "inference", "framework": "pytorch",
+    "model":   { "id": "meta-llama/Llama-3.1-8B-Instruct", "params_billions": null, "precision": "bf16",
+                 "arch_type": "transformer", "peft": null, "manifest": null, ... },
+    "runtime": { "inference_engine": "vllm", "optimizer": null, ... },
+    "knobs":   { "batch_size": 32, "epochs": null, "max_steps": null, "dataset_samples": null,
+                 "input_tokens": 512, "max_new_tokens": 512, "image_size": null, ... },
+    "data":    { "dataset_mb": null, "loads_model_weights": true, "downloads_model": false, ... },
+    "signals": null                            // an analysis seals here what it read from the code; opaque
+  }
 }
 ```
 
-Ladder:
+Estimate (`estimate/1`):
 
 ```jsonc
 {
-  "meta": { "schema_version": "ladder/2", "calibration_id": "c-6c518e4b0bbf",
-            "assay_calibration_id": "c-6c518e4b0bbf" },
+  "meta": { "schema_version": "estimate/1", "calibration_id": "c-1f97f066fbc6", "confidence": 0.4 },
+  "requirements": { "min_vram_gb": 30, "vram_breakdown_gb": {...},
+                    "min_disk_gb": 19, "disk_breakdown_gb": {...}, "cpu_only": false },
+  "work": {
+    "reference_cu": 133688,                    // work on the reference card, CU
+    "phases_cu": { "compute": 4808, "warmup": 124880, "io": 1000, "setup": 3000 },
+    "reference_sec": 133.7,                    // the same work in seconds
+    "spread": { "factor": 1.011 },             // a slow host takes up to this × longer
+    "steps": 1, "steps_basis": "llm_decode"
+  },
+  "data": { "model_download_mb": null, "weights_load_gb": 16.0 },
+  "findings": [],     // the defaults the forecast used, e.g. "workload.knobs.batch_size not stated: 1"
+  "hints": []         // e.g. { "key": "workload.knobs.batch_size", "reason": "stating it makes the forecast more precise" }
+}
+```
+
+Ladder (`ladder/3`):
+
+```jsonc
+{
+  "meta": { "schema_version": "ladder/3", "calibration_id": "c-1f97f066fbc6" },
   "rows": [   // fastest first
-    { "gpu_id": "b200", "gpu_name": "B200 SXM", "vram_gb": 192, "compute_ratio": 0.678 }
+    { "gpu_id": "b200_nvl", "gpu_name": "B200 NVL", "vram_gb": 180, "compute_ratio": 0.6696, "warmup_sec": null }
   ]
 }
 ```
 
-Time on a GPU, from the assay and its ladder row:
+Time on a GPU, from the estimate and its ladder row:
 
 ```python
-w = assay["work"]
-sec_per_cu = w["reference_sec"] / w["reference_cu"]        # the assay's own scale
-compute_sec = w["phases_cu"]["compute"] * sec_per_cu
-sec = row["compute_ratio"] * compute_sec + (w["reference_sec"] - compute_sec)
+w = out["estimate"]["work"]
+sec_per_cu = w["reference_sec"] / w["reference_cu"]        # the work's own scale
+ph = {k: v * sec_per_cu for k, v in w["phases_cu"].items()}
+warmup = row["warmup_sec"] if row["warmup_sec"] is not None else ph["warmup"]
+sec = row["compute_ratio"] * ph["compute"] + warmup + ph["io"] + ph["setup"]
 ```
 
-- **Send the assay back unchanged.** `assay_key` is sealed by the analyzer; an
-  edited or missing key is rejected (400). A CPU-only assay (`work: null`) or one
-  with no compute phase has nothing to rank (422).
-- **`calibration_id` dates the forecast.** An assay is valid until the analyzer
-  is recalibrated; after that `ladder()` raises `AssayOutdated` (409).
+- **Hints make the forecast more precise.** Each `hints` key is an assay path
+  that was not stated; add it and ask again.
+- **Send an analysis's assay back unchanged.** `signals` is sealed by the
+  analyzer; an edited one is rejected (400). An assay with no GPU work
+  (`work: null`, CPU-only) has nothing to rank (422).
+- `calibration_id` names the calibration the forecast comes from; an assay
+  carries none, so it never goes out of date — ask again for a current forecast.
 - Rows cover every catalogue GPU with at least `requirements.min_vram_gb`.
-- Over HTTP: `POST https://krauncher.com/api/v1/ladder`, header `X-API-Key`,
-  body = the assay JSON. Tutorial `55_assay_ladder.py`.
+- Over HTTP: `POST https://krauncher.com/api/v1/assay/estimate` and
+  `POST https://krauncher.com/api/v1/ladder`, header `X-API-Key`, body = the
+  assay JSON. Tutorial `55_assay_ladder.py`.
 
 ---
 

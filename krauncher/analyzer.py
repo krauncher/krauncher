@@ -221,11 +221,6 @@ def classify_safety_net() -> TaskClassification:
 # Level 2: AnalyzerClient (E2E encrypted)
 # ---------------------------------------------------------------------------
 
-class AssayOutdated(RuntimeError):
-    """The analyzer was recalibrated after the assay was made (/v1/ladder 409):
-    analyze the code again for a fresh assay. Raised by KrauncherClient.ladder()."""
-
-
 def analyzer_kwargs(kwargs: dict) -> dict:
     """The call arguments the analyzer receives: JSON-safe scalars, and data and
     model manifests (krauncher.manifest) as plain dicts."""
@@ -358,13 +353,16 @@ class AnalyzerClient:
                     raise TimeoutError(f"Analyzer timed out after {self._timeout}s")
 
     async def assay(self, job_id: str) -> dict:
-        """GET /jobs/{job_id}/assay — the assay v1 of a finished analysis.
+        """GET /v2/jobs/{job_id}/assay — the assay/2 of a finished analysis:
+        the facts of the payload (cas-analyzer doc/contracts-v2.md).
 
         *job_id* is ``TaskClassification.analyzer_job_id``. The analyzer keeps
         jobs for about an hour; keep the assay itself, it outlives the job.
+        Pass it to :meth:`KrauncherClient.estimate` or
+        :meth:`KrauncherClient.ladder`.
         """
         async with httpx.AsyncClient(timeout=self._timeout, headers=self._headers) as session:
-            resp = await session.get(f"{self._url}/jobs/{job_id}/assay")
+            resp = await session.get(f"{self._url}/v2/jobs/{job_id}/assay")
             resp.raise_for_status()
             return resp.json()
 
