@@ -215,10 +215,12 @@ For larger or registered datasets, use the **data bridge** (`data_urls=` /
   `model_manifest=ModelManifest.from_hf(repo)` carries the checkpoint's weight
   size, dimensions and KV cache dtype for the VRAM estimate. See
   [AGENTS.md](AGENTS.md).
-- **Assay and GPU ladder.** `analyzer.assay(job_id)` freezes an analysis into a
-  plain-JSON record of the work; `await client.ladder(assay)` returns its
-  compute coefficient on every GPU. See
-  [tutorial/55](tutorial/55_assay_ladder.py).
+- **Assay, estimate and GPU ladder.** `analyzer.assay(job_id)` freezes an
+  analysis into a plain-JSON record of the facts of the work (`assay/2`); an
+  assay can also be written by hand, without code. `await client.estimate(assay)`
+  returns what it needs and how much work it is; `await client.ladder(assay)`
+  adds its compute coefficient on every GPU. See
+  [AGENTS.md](AGENTS.md) and [tutorial/55](tutorial/55_assay_ladder.py).
 
 ---
 
